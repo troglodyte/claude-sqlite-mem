@@ -54,14 +54,15 @@ async function withServer(work) {
       waiting.set(lastId, (reply) => (reply instanceof Error ? reject(reply) : resolve(reply)));
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: lastId, method, params })}\n`);
     });
-  const callTool = async (name, args = {}) => {
+  const callToolText = async (name, args = {}) => {
     const reply = await request("tools/call", { name, arguments: args });
-    return JSON.parse(reply.result.content[0].text);
+    return reply.result.content[0].text;
   };
+  const callTool = async (name, args = {}) => JSON.parse(await callToolText(name, args));
   try {
     await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-    return await work({ callTool, store });
+    return await work({ callTool, callToolText, store });
   } finally {
     child.kill();
   }
@@ -81,5 +82,15 @@ test("an observation written through the server is found by memory_search", asyn
     await callTool("memory_add_observations", { entity: "decision:storage", observations: ["the quokka store is SQLite"] });
     const found = await callTool("memory_search", { query: "quokka" });
     assert.deepEqual(found.results.map((r) => r.name), ["decision:storage"]);
+  });
+});
+
+// The read budgets in budget.js measure compact JSON; indenting the reply added
+// ~32% on top of them, so a "24k" search routinely served 28-35k.
+test("tool replies are compact JSON, the same size the read budgets measure", async () => {
+  await withServer(async ({ callToolText }) => {
+    await callToolText("memory_add_observations", { entity: "decision:storage", observations: ["the quokka store is SQLite"] });
+    const text = await callToolText("memory_search", { query: "quokka" });
+    assert.equal(text, JSON.stringify(JSON.parse(text)));
   });
 });

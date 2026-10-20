@@ -25,7 +25,8 @@ function registerTool(name, description, schema, handler) {
     const startedAt = Date.now();
     try {
       const value = await handler(args ?? {});
-      const text = JSON.stringify(value, null, 2);
+      // Compact, because the read budgets measure compact JSON: indenting added ~32% on top.
+      const text = JSON.stringify(value);
       recordToolCall({ tool: name, project, args, value, chars: text.length, ok: true, ms: Date.now() - startedAt });
       return { content: [{ type: "text", text }] };
     } catch (error) {
