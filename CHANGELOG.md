@@ -6,6 +6,12 @@ Version numbers track `.claude-plugin/plugin.json` and `package.json`, which are
 kept in step deliberately: `claude plugin update` compares that string, so a
 release that doesn't move it never reaches any other project.
 
+## 0.8.1 — 2026-10-21
+
+- **Fixed**: MCP tool replies are sent as compact JSON (`src/mcp/server.js`). The read budgets in
+  `src/lib/budget.js` measure compact JSON, but replies were indented, adding ~32% on top: searches
+  budgeted at 24k characters served up to 35k.
+
 ## 0.8.0 — 2026-10-15
 
 - **Added**: `npm run stats` (`scripts/memory-stats.mjs`, `src/lib/statsReport.js`), a
