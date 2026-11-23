@@ -265,3 +265,14 @@ describe("summarize", () => {
     assert.equal(search.chars, 1040);
   });
 });
+
+test("summarize folds a project's old Bitbucket spelling into its current one", () => {
+  const entries = [
+    { at: "2026-11-01T10:00:00.000Z", tool: "memory_search", kind: "read", project: "bitbucket.org/jhtna/app", hits: 2, chars: 10, ok: true },
+    { at: "2026-11-20T10:00:00.000Z", tool: "memory_search", kind: "read", project: "ssh.bitbucket.org/jhtna/app", hits: 2, chars: 10, ok: true },
+  ];
+
+  const s = summarize(entries);
+
+  assert.deepEqual(s.projects.map((p) => [p.project, p.reads]), [["ssh.bitbucket.org/jhtna/app", 2]]);
+});

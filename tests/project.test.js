@@ -47,13 +47,48 @@ describe("detectProject", () => {
     assert.equal(detectProject(repo), "github.com/acme/widgets");
   });
 
+  // Bitbucket moved git-over-SSH to ssh.bitbucket.org, and the store's history
+  // already lives under that spelling. A clone made over HTTPS, or with the old
+  // host, must land in the same project or it starts from an empty memory.
+  test("old-host, new-host and https-with-username Bitbucket remotes resolve to one project", () => {
+    const remotes = [
+      "git@ssh.bitbucket.org:jhtna/widgets.git",
+      "git@bitbucket.org:jhtna/widgets.git",
+      "https://mharris@bitbucket.org/jhtna/widgets.git",
+    ];
+    const projects = remotes.map((remote, i) => {
+      const repo = makeRepo(path.join(tmp, `bitbucket-${i}`));
+      git(repo, "remote", "add", "origin", remote);
+      return detectProject(repo);
+    });
+    assert.deepEqual(projects, Array(3).fill("ssh.bitbucket.org/jhtna/widgets"));
+  });
+
+  test("an https remote's username is not part of the project", () => {
+    const repo = makeRepo(path.join(tmp, "https-user"));
+    git(repo, "remote", "add", "origin", "https://someone@github.com/acme/widgets.git");
+    assert.equal(detectProject(repo), "github.com/acme/widgets");
+  });
+
+  test("an scp-style remote with a user other than git still resolves to host/path", () => {
+    const repo = makeRepo(path.join(tmp, "scp-alice"));
+    git(repo, "remote", "add", "origin", "alice@github.com:acme/widgets.git");
+    assert.equal(detectProject(repo), "github.com/acme/widgets");
+  });
+
+  test("credentials in an https remote never reach the project id", () => {
+    const repo = makeRepo(path.join(tmp, "https-token"));
+    git(repo, "remote", "add", "origin", "https://someone:s3cr3t-token@github.com/acme/widgets.git");
+    assert.equal(detectProject(repo), "github.com/acme/widgets");
+  });
+
   test("a worktree of a repo with a remote resolves to the same project as the main checkout", () => {
     const repo = makeRepo(path.join(tmp, "remote-main"));
     git(repo, "remote", "add", "origin", "https://bitbucket.org/acme/gadgets.git");
     const wt = path.join(tmp, "remote-wt");
     git(repo, "worktree", "add", "-q", "-b", "feat/x", wt);
     assert.equal(detectProject(wt), detectProject(repo));
-    assert.equal(detectProject(wt), "bitbucket.org/acme/gadgets");
+    assert.equal(detectProject(wt), "ssh.bitbucket.org/acme/gadgets");
   });
 
   test("a remote-less repo falls back to its directory name", () => {

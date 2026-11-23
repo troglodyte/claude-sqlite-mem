@@ -43,8 +43,21 @@ function mainCheckoutName(cwd) {
 }
 
 function normalizeRemote(remote) {
-  return remote
-    .replace(/^git@([^:]+):/, "$1/")
-    .replace(/^[a-z]+:\/\//, "")
-    .replace(/\.git$/, "");
+  return canonicalProjectId(
+    remote
+      .replace(/^[^@/]+@([^:/]+):/, "$1/")
+      .replace(/^[a-z]+:\/\//, "")
+      .replace(/^[^@/]+@/, "")
+      .replace(/\.git$/, "")
+  );
+}
+
+/**
+ * One spelling per repository. Bitbucket moved git-over-SSH to ssh.bitbucket.org,
+ * and the store's history already lives under that host, so the old host (and an
+ * HTTPS clone, which still uses it) folds onto it rather than starting a second,
+ * empty project. Also applied to telemetry written before the move.
+ */
+export function canonicalProjectId(project) {
+  return project.startsWith("bitbucket.org/") ? `ssh.${project}` : project;
 }

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { CONFIG_DIR } from "./config.js";
 import { topScore, WEAK_SCORE } from "./relevance.js";
+import { canonicalProjectId } from "./project.js";
 
 /**
  * Access-pattern telemetry for the MCP tools.
@@ -268,7 +269,7 @@ export function summarize(entries) {
       }
     }
 
-    bump(byProject, entry.project ?? "(unknown)", entry);
+    bump(byProject, entry.project ? canonicalProjectId(entry.project) : "(unknown)", entry);
     bump(byTool, entry.tool, entry);
     if (entry.at) {
       if (!firstAt || entry.at < firstAt) {
