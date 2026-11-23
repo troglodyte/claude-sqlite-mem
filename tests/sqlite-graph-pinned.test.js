@@ -63,3 +63,53 @@ test("findRepeatedFacts with no project pairs facts only within one scope", asyn
   const pairs = await graph.findRepeatedFacts({ min: 0.95 });
   assert.equal(pairs.length, 0, "the same text in two projects is not a repeat any session sees");
 });
+
+// Restating a standing fact in session after session is the strongest signal
+// that it matters, so an entity's weight is the number of sessions that wrote to
+// it. Before this, the newest rewording of one hot fact filled the whole block.
+const Q = "github.com/acme/ranked";
+
+async function addStanding(entity, text, sessionId) {
+  await graph.addObservations({ entity, entityType: "constraint", project: Q, observations: [text], sessionId });
+}
+
+test("an entity restated across more sessions ranks above a newer one-off", async () => {
+  await addStanding("constraint:review-comment-only", "reviews may only comment on the pull request", "s1");
+  await addStanding("constraint:review-comment-only", "automated review cannot approve anything", "s2");
+  await addStanding("constraint:review-comment-only", "approval status needs a human click", "s3");
+  await addStanding("constraint:one-off", "worktree names must avoid the substring no", "s4");
+
+  const pinned = await graph.getPinnedFacts({ project: Q });
+
+  assert.equal(pinned.facts[0].entity, "constraint:review-comment-only");
+});
+
+test("each entity shows one fact before any entity shows a second", async () => {
+  await addStanding("constraint:review-comment-only", "reviews may only comment on the pull request", "s1");
+  await addStanding("constraint:review-comment-only", "automated review cannot approve anything", "s2");
+  await addStanding("constraint:review-comment-only", "approval status needs a human click", "s3");
+  await addStanding("constraint:one-off", "worktree names must avoid the substring no", "s4");
+
+  const pinned = await graph.getPinnedFacts({ project: Q });
+
+  assert.deepEqual(
+    pinned.facts.map((f) => f.text),
+    [
+      "approval status needs a human click",
+      "worktree names must avoid the substring no",
+      "automated review cannot approve anything",
+      "reviews may only comment on the pull request",
+    ]
+  );
+});
+
+test("totalChars widens the budget for callers that can afford more", async () => {
+  for (let i = 0; i < 30; i++) {
+    await addStanding(`constraint:rule-${i}`, `rule number ${i} ${"x".repeat(200)} unique${i}`, `s${i}`);
+  }
+
+  const standard = await graph.getPinnedFacts({ project: Q });
+  const wide = await graph.getPinnedFacts({ project: Q, totalChars: 10_000 });
+
+  assert.ok(wide.returned > standard.returned, `${wide.returned} should exceed ${standard.returned}`);
+});

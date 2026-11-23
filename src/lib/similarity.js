@@ -8,8 +8,12 @@ export function wordSet(text) {
 }
 
 export function wordOverlap(a, b) {
-  const left = wordSet(a);
-  const right = wordSet(b);
+  return setOverlap(wordSet(a), wordSet(b));
+}
+
+// The same index over sets already built, for callers comparing one text
+// against many: tokenizing once per text instead of once per pair.
+export function setOverlap(left, right) {
   if (left.size === 0 || right.size === 0) {
     return 0;
   }

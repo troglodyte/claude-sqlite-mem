@@ -73,9 +73,9 @@ test("getPinnedFacts reports its own truncation rather than dropping silently", 
   assert.equal(whole.total, 3, "all three standing facts are eligible");
   assert.equal(whole.truncated, false, "nothing is dropped when the budget has room");
 
-  // `limit` is the driver-level valve; forcing it low proves the report is
-  // wired to the real counts and not hardcoded.
-  const clipped = await graph.getPinnedFacts({ project: PROJECT, limit: 1 });
+  // `totalChars` is the valve; forcing it low (fitToBudget always keeps one)
+  // proves the report is wired to the real counts and not hardcoded.
+  const clipped = await graph.getPinnedFacts({ project: PROJECT, totalChars: 1 });
   assert.equal(clipped.returned, 1);
   assert.equal(clipped.total, 3, "total is the true eligible count, not the returned count");
   assert.equal(clipped.truncated, true);

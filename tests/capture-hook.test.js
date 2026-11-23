@@ -203,3 +203,52 @@ test("an unreadable pending input is reported, not silently swallowed", async ()
   const log = fs.existsSync(box.logFile) ? fs.readFileSync(box.logFile, "utf8") : "";
   assert.match(log, /failed to read input file/, "a corrupt pending input must leave a trace");
 });
+
+// The prompt builder is unit-tested on its own; this proves runCapture actually
+// hands it the stored standing facts and the unattended flag. A first capture
+// seeds a preference, then a scripted (sdk-cli) transcript's capture records
+// the arguments the extractor was launched with.
+test("capture shows the extractor stored standing facts and flags a scripted run", async () => {
+  const box = sandbox();
+  const storeEnv = { CLAUDE_NEO4J_SQLITE: path.join(box.home, ".claude-neo4j", "memory.sqlite") };
+  const seededFact = "Seeded standing fact from the wiring test";
+
+  const seedingFake = path.join(box.home, "fake-claude-seed");
+  fs.writeFileSync(
+    seedingFake,
+    "#!/usr/bin/env bash\ncat >/dev/null\n" +
+      `cat <<'JSON'\n${JSON.stringify({
+        structured_output: { entities: [{ name: "preference:wiring", type: "preference", observations: [{ text: seededFact }] }], relations: [] },
+      })}\nJSON\n`
+  );
+  fs.chmodSync(seedingFake, 0o755);
+  await runHook(
+    { hook_event_name: "PreCompact", session_id: "1f6c9a02-dead-4beef-9999-000000000005", transcript_path: box.transcript, cwd: box.home },
+    box,
+    { ...storeEnv, CLAUDE_NEO4J_CAPTURE_CLI: seedingFake }
+  );
+
+  const argsFile = path.join(box.home, "extractor-args.txt");
+  const recordingFake = path.join(box.home, "fake-claude-record");
+  fs.writeFileSync(
+    recordingFake,
+    `#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s\\n' "$@" > '${argsFile}'\n` +
+      `cat <<'JSON'\n${JSON.stringify({ structured_output: { entities: [], relations: [] } })}\nJSON\n`
+  );
+  fs.chmodSync(recordingFake, 0o755);
+  const scriptedTranscript = path.join(box.home, "scripted.jsonl");
+  fs.writeFileSync(
+    scriptedTranscript,
+    JSON.stringify({ entrypoint: "sdk-cli", message: { role: "user", content: "You have been notified that a code review is pending." } }) + "\n"
+  );
+  await runHook(
+    { hook_event_name: "PreCompact", session_id: "1f6c9a02-dead-4beef-9999-000000000006", transcript_path: scriptedTranscript, cwd: box.home },
+    box,
+    { ...storeEnv, CLAUDE_NEO4J_CAPTURE_CLI: recordingFake }
+  );
+
+  const extractorArgs = fs.readFileSync(argsFile, "utf8");
+  assert.match(extractorArgs, new RegExp(`<known_facts>[\\s\\S]*${seededFact}`), "stored standing facts must reach the extractor");
+  assert.match(extractorArgs, /unattended, scripted run/, "a scripted transcript must reach the extractor flagged as one");
+  fs.rmSync(box.home, { recursive: true, force: true });
+});

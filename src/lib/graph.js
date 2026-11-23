@@ -5,6 +5,7 @@ import { resolveCanonicalName } from "./dedup.js";
 import { resolveSubsystem, parseSubsystemFilter, UNTAGGED } from "./subsystem.js";
 import { BUDGETS, truncateText, fitToBudget } from "./budget.js";
 import { wordOverlap } from "./similarity.js";
+import { collapseRepeats, rankPinnedRows, REPEAT_REVIEW_OVERLAP } from "./pinnedRanking.js";
 import { classifyRelevance, topScore, describeRelevance } from "./relevance.js";
 import { capRelations, resolveRelationCap } from "./relations.js";
 import { shouldFallBack, otherProjectResults } from "./fallback.js";
@@ -353,49 +354,28 @@ const PINNED_TYPES = ["user", "preference", "constraint", "convention"];
 export const PINNED_ENTITY_SQL = `(${PINNED_TYPES.map((type) => `lower(coalesce(e.type, '')) LIKE '${type}%'`).join(" OR ")} OR e.name = 'user')`;
 const PINNED_WHERE = `${IN_SCOPE} AND ${PINNED_ENTITY_SQL}`;
 
-// Measured on 693 standing facts (engine spec, "Fix 2"): every pair at 0.8 or
-// more was a repeat, and the next pair down (0.73) was two different tickets.
-// Reworded repeats score as low as 0.33, below pairs that genuinely differ, so
-// they are only listed for review (0.3), never collapsed.
-export const REPEAT_COLLAPSE_OVERLAP = 0.8;
-export const REPEAT_REVIEW_OVERLAP = 0.3;
-
-// Rows arrive newest first, so the newest of each group of repeats is kept.
-function collapseRepeats(rows) {
-  const facts = [];
-  let collapsed = 0;
-  for (const row of rows) {
-    if (facts.some((kept) => wordOverlap(kept.text, row.text) >= REPEAT_COLLAPSE_OVERLAP)) {
-      collapsed += 1;
-    } else {
-      facts.push(row);
-    }
-  }
-  return { facts, collapsed };
-}
-
 /**
- * The standing facts injected verbatim at SessionStart, repeats collapsed.
- * `total` counts every eligible fact, `collapsed` the repeats hidden on purpose,
- * and `truncated` says whether the budget or `limit` cut any of the rest.
+ * The standing facts injected verbatim at SessionStart, repeats collapsed,
+ * ranked by how many sessions wrote to each entity and taken one per entity
+ * per round. `total` counts every eligible fact, `collapsed` the repeats hidden
+ * on purpose, and `truncated` says whether the budget cut any of the rest.
+ * `totalChars` lets a caller with room to spare (the capture extractor) see more.
  */
-export async function getPinnedFacts({ project, limit = 100 } = {}) {
-  const db = getDb();
-  const params = { project: project ?? null };
-  const { total } = db
-    .prepare(`SELECT count(*) AS total FROM observations o JOIN entities e ON e.id = o.entity_id WHERE ${PINNED_WHERE}`)
-    .get(params);
-  const rows = db
+export async function getPinnedFacts({ project, totalChars = BUDGETS.pinnedTotalChars } = {}) {
+  const pinnedRows = getDb()
     .prepare(
-      `SELECT e.name AS entity, e.type AS type, o.text AS text
+      `SELECT e.id AS entityId, e.name AS entity, e.type AS type, o.text AS text, o.session_id AS sessionId,
+              o.created_at AS createdAt, o.rowid AS rid
        FROM observations o JOIN entities e ON e.id = o.entity_id WHERE ${PINNED_WHERE}
-       ORDER BY o.created_at DESC, o.rowid DESC LIMIT :limit`
+       ORDER BY o.created_at DESC, o.rowid DESC`
     )
-    .all({ ...params, limit });
-  const { facts, collapsed } = collapseRepeats(rows);
-  const shown = facts.map((row) => ({ entity: row.entity, type: row.type, text: truncateText(row.text, BUDGETS.pinnedTextChars) }));
-  const { kept } = fitToBudget(shown, BUDGETS.pinnedTotalChars);
-  return { facts: kept, total, collapsed, returned: kept.length, truncated: kept.length < total - collapsed };
+    .all({ project: project ?? null });
+  const toShownFact = (row) => ({ entity: row.entity, type: row.type, text: truncateText(row.text, BUDGETS.pinnedTextChars) });
+  const sizeOf = (row) => JSON.stringify(toShownFact(row)).length;
+  // A rough stop is enough here: fitToBudget makes the exact cut.
+  const { facts, collapsed } = collapseRepeats(rankPinnedRows(pinnedRows), { maxChars: totalChars, sizeOf });
+  const { kept } = fitToBudget(facts.map(toShownFact), totalChars);
+  return { facts: kept, total: pinnedRows.length, collapsed, returned: kept.length, truncated: kept.length < pinnedRows.length - collapsed };
 }
 
 const shownFact = (row) => ({ entity: row.entity, project: shownProject(row.project), id: row.id, createdAt: iso(row.createdAt), text: row.text });
