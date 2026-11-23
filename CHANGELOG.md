@@ -6,6 +6,23 @@ Version numbers track `.claude-plugin/plugin.json` and `package.json`, which are
 kept in step deliberately: `claude plugin update` compares that string, so a
 release that doesn't move it never reaches any other project.
 
+## 0.9.0 — 2026-11-23
+
+- **Changed**: SessionStart's "Always applies" block ranks standing facts by how many sessions
+  restated each entity, decayed with a 14-day half-life, and shows one fact per entity before a
+  second from any (`src/lib/pinnedRanking.js`). Newest-first let one constraint reworded in 119
+  sessions fill half the block on the busiest project.
+- **Changed**: capture shows the extractor the project's stored standing facts, in a delimited
+  data block, and tells it not to save them again. Transcripts from scripted runs (`sdk-cli`,
+  `sdk-ts`) also tell it to skip the run's own environment limits and per-review verdicts.
+- **Fixed**: `getPinnedFacts` compared every standing fact with every other; it now stops once
+  the budget is full (6 s to 10 ms on a project with 1,270 standing facts).
+- **Fixed**: Bitbucket remotes on `bitbucket.org`, HTTPS clones, and scp-style remotes with any
+  user resolve to the `ssh.bitbucket.org/...` id the store already uses; usernames and tokens
+  never reach a project id. `npm run telemetry` folds the old spelling into the new one.
+- **Fixed**: a capture with nothing new logs "nothing new since the last capture" instead of
+  "undefined chunk(s)".
+
 ## 0.8.1 — 2026-10-21
 
 - **Fixed**: MCP tool replies are sent as compact JSON (`src/mcp/server.js`). The read budgets in
